@@ -8,8 +8,10 @@ import open3d
 from copy import deepcopy
 from tqdm import tqdm
 
-from dataset.kitti_dataset import KittiDataset, sel_xyz_in_box3d, \
-    sel_xyz_in_box2d, Points
+# from dataset.kitti_dataset import KittiDataset, sel_xyz_in_box3d, sel_xyz_in_box2d, Points
+from dataset.kitti_dataset import sel_xyz_in_box3d, sel_xyz_in_box2d
+from dataset.painted_kitti_dataset import PaintedPoints
+
 from models.nms import boxes_3d_to_corners, overlapped_boxes_3d, \
     overlapped_boxes_3d_fast_poly
 from models import preprocess
@@ -31,12 +33,14 @@ def save_cropped_boxes(dataset, filename, expand_factor=[1.1, 1.1, 1.1],
                             cropped_labels[label['name']].append(label)
                             cropped_cam_points[label['name']].append(
                                 [cam_points.xyz[mask].tolist(),
-                                cam_points.attr[mask].tolist()])
+                                cam_points.attr[mask].tolist(),
+                                cam_points.scores[mask].tolist()])
                         else:
                             cropped_labels[label['name']] = [label]
                             cropped_cam_points[label['name']] = [
                                 [cam_points.xyz[mask].tolist(),
-                                cam_points.attr[mask].tolist()]]
+                                cam_points.attr[mask].tolist()],
+                                cam_points.scores[mask].tolist()]
 
     with open(filename, 'w') as outfile:
         json.dump((cropped_labels,cropped_cam_points), outfile)
@@ -48,7 +52,8 @@ def load_cropped_boxes(filename):
         print("Load %d %s" % (len(cropped_cam_points[key]), key))
         for i, cam_points in enumerate(cropped_cam_points[key]):
             cropped_cam_points[key][i] = Points(xyz=np.array(cam_points[0]),
-                                            attr=np.array(cam_points[1]))
+                                            attr=np.array(cam_points[1]),
+                                               scores=np.array(cam_points[2]))
     return cropped_labels, cropped_cam_points
 
 def vis_cropped_boxes(cropped_labels, cropped_cam_points, dataset):
@@ -83,6 +88,7 @@ def parser_without_collision(cam_rgb_points, labels,
     must_have_ground=False):
     xyz = cam_rgb_points.xyz
     attr = cam_rgb_points.attr
+    scores = cam_rgb_points.scores
     if overlap_mode == 'box' or overlap_mode == 'box_and_point':
         label_boxes = np.array([
             [l['x3d'], l['y3d'], l['z3d'], l['length'],
@@ -183,7 +189,7 @@ def parser_without_collision(cam_rgb_points, labels,
         # if not sucess:
             # if not sucess, keep the old label
             # print('Warning: fail to parse cropped box')
-    return Points(xyz=xyz, attr=attr), labels
+    return PaintedPoints(xyz=xyz, attr=attr, scores=scores), labels
 
 class CropAugSampler():
     """ A class to sample from cropped objects and parse it to a frame """

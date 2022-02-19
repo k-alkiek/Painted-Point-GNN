@@ -11,6 +11,7 @@ import numpy as np
 import tensorflow as tf
 
 from dataset.kitti_dataset import KittiDataset
+from dataset.painted_kitti_dataset import PaintedKittiDataset
 from models.graph_gen import get_graph_generate_fn
 from models.models import get_model
 from models.box_encoding import get_box_decoding_fn, get_box_encoding_fn,\
@@ -49,13 +50,22 @@ if 'train' in config_complete:
 else:
     config = config_complete
 # input function ==============================================================
-dataset = KittiDataset(
+# dataset = KittiDataset(
+#     os.path.join(DATASET_DIR, 'image/training/image_2'),
+#     os.path.join(DATASET_DIR, 'velodyne/training/velodyne/'),
+#     os.path.join(DATASET_DIR, 'calib/training/calib/'),
+#     os.path.join(DATASET_DIR, 'labels/training/label_2'),
+#     DATASET_SPLIT_FILE,
+#     num_classes=config['num_classes'])
+
+dataset = PaintedKittiDataset(
     os.path.join(DATASET_DIR, 'image/training/image_2'),
-    os.path.join(DATASET_DIR, 'velodyne/training/velodyne/'),
+    os.path.join(DATASET_DIR, 'velodyne/training/painted_lidar/'),
     os.path.join(DATASET_DIR, 'calib/training/calib/'),
     os.path.join(DATASET_DIR, 'labels/training/label_2'),
     DATASET_SPLIT_FILE,
     num_classes=config['num_classes'])
+
 NUM_CLASSES = dataset.num_classes
 
 if 'NUM_TEST_SAMPLE' not in train_config:
@@ -76,7 +86,7 @@ if 'crop_aug' in train_config:
     sampler = CropAugSampler(train_config['crop_aug']['crop_filename'])
 
 def fetch_data(frame_idx):
-    cam_rgb_points = dataset.get_cam_points_in_image_with_rgb(frame_idx,
+    cam_rgb_points = dataset.get_cam_points_in_image_with_rgb_and_scores(frame_idx,
         config['downsample_by_voxel_size'])
     box_label_list = dataset.get_label(frame_idx)
     if 'crop_aug' in train_config:
@@ -102,6 +112,9 @@ def fetch_data(frame_idx):
         input_v = cam_rgb_points.attr[:, [0]]
     elif config['input_features'] == '0':
         input_v = np.zeros((cam_rgb_points.attr.shape[0], 1))
+    elif config['input_features'] == 'is':
+        input_v = np.hstack([cam_rgb_points.attr[:, [0]], cam_rgb_points.scores])
+        
     last_layer_graph_level = config['model_kwargs'][
         'layer_configs'][-1]['graph_level']
     last_layer_points_xyz = vertex_coord_list[last_layer_graph_level+1]
@@ -198,6 +211,9 @@ for gi in range(NUM_GPU):
             elif config['input_features'] == '0':
                 t_initial_vertex_features = tf.placeholder(
                     dtype=tf.float32, shape=[None, 1])
+            elif config['input_features'] == 'is':
+                t_initial_vertex_features = tf.placeholder(
+                    dtype=tf.float32, shape=[None, 5])
 
             t_vertex_coord_list = [
                 tf.placeholder(dtype=tf.float32, shape=[None, 3])]
@@ -393,7 +409,10 @@ optimizer_class = optimizer_dict[train_config['optimizer']]
 optimizer_kwargs = optimizer_kwargs_dict[train_config['optimizer']]
 if 'optimizer_kwargs' in train_config:
     optimizer_kwargs.update(train_config['optimizer_kwargs'])
+    
 optimizer = optimizer_class(t_learning_rate, **optimizer_kwargs)
+# optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer) # Mixed Precision
+
 grads_cross_gpu = []
 with tf.control_dependencies(update_ops):
     for gi in range(NUM_GPU):

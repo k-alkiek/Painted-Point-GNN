@@ -13,6 +13,7 @@ import cv2
 from tqdm import tqdm
 
 from dataset.kitti_dataset import KittiDataset, Points
+from dataset.painted_kitti_dataset import PaintedKittiDataset, PaintedPoints
 from models.graph_gen import get_graph_generate_fn
 from models.models import get_model
 from models.box_encoding import get_box_decoding_fn, get_box_encoding_fn, \
@@ -67,6 +68,7 @@ assert os.path.isfile(CONFIG_PATH), 'No config file found in %s'
 config = load_config(CONFIG_PATH)
 # setup dataset ===============================================================
 if IS_TEST:
+    raise ValueError('running test not supported, fix code')
     dataset = KittiDataset(
         os.path.join(DATASET_DIR, 'image/testing/image_2'),
         os.path.join(DATASET_DIR, 'velodyne/testing/velodyne/'),
@@ -75,13 +77,21 @@ if IS_TEST:
         num_classes=config['num_classes'],
         is_training=False)
 else:
-    dataset = KittiDataset(
+    # dataset = KittiDataset(
+    #     os.path.join(DATASET_DIR, 'image/training/image_2'),
+    #     os.path.join(DATASET_DIR, 'velodyne/training/velodyne/'),
+    #     os.path.join(DATASET_DIR, 'calib/training/calib/'),
+    #     os.path.join(DATASET_DIR, 'labels/training/label_2'),
+    #     DATASET_SPLIT_FILE,
+    #     num_classes=config['num_classes'])
+    dataset = PaintedKittiDataset(
         os.path.join(DATASET_DIR, 'image/training/image_2'),
-        os.path.join(DATASET_DIR, 'velodyne/training/velodyne/'),
+        os.path.join(DATASET_DIR, 'velodyne/training/painted_lidar/'),
         os.path.join(DATASET_DIR, 'calib/training/calib/'),
         os.path.join(DATASET_DIR, 'labels/training/label_2'),
         DATASET_SPLIT_FILE,
         num_classes=config['num_classes'])
+    
 NUM_TEST_SAMPLE = dataset.num_files
 NUM_CLASSES = dataset.num_classes
 # occlusion score =============================================================
@@ -119,6 +129,10 @@ elif config['input_features'] == 'i':
 elif config['input_features'] == '0':
     t_initial_vertex_features = tf.placeholder(
         dtype=tf.float32, shape=[None, 1])
+elif config['input_features'] == 'is':
+    t_initial_vertex_features = tf.placeholder(
+        dtype=tf.float32, shape=[None, 5])
+        
 t_vertex_coord_list = [tf.placeholder(dtype=tf.float32, shape=[None, 3])]
 for _ in range(len(config['runtime_graph_gen_kwargs']['level_configs'])):
     t_vertex_coord_list.append(
@@ -207,7 +221,7 @@ with tf.Session(graph=graph,
             line_set = open3d.LineSet()
             graph_line_set = open3d.LineSet()
         # provide input ======================================================
-        cam_rgb_points = dataset.get_cam_points_in_image_with_rgb(frame_idx,
+        cam_rgb_points = dataset.get_cam_points_in_image_with_rgb_and_scores(frame_idx,
             config['downsample_by_voxel_size'])
         calib = dataset.get_calib(frame_idx)
         image = dataset.get_image(frame_idx)
@@ -237,6 +251,9 @@ with tf.Session(graph=graph,
             input_v = cam_rgb_points.attr[:, [0]]
         elif config['input_features'] == '0':
             input_v = np.zeros((cam_rgb_points.attr.shape[0], 1))
+        elif config['input_features'] == 'is':
+            input_v = np.hstack([cam_rgb_points.attr[:, [0]], cam_rgb_points.scores])
+        
         last_layer_graph_level = \
             config['model_kwargs']['layer_configs'][-1]['graph_level']
         last_layer_points_xyz = vertex_coord_list[last_layer_graph_level+1]

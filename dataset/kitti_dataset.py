@@ -420,7 +420,7 @@ class KittiDataset(object):
 
         for f in file_list:
             image_file = join(image_dir, f)+'.png'
-            point_file = join(point_dir, f)+'.bin'
+            point_file = join(point_dir, f)+'.npy'
             label_file = join(label_dir, f)+'.txt'
             calib_file = join(calib_dir, f)+'.txt'
             assert isfile(image_file), "Image %s does not exist" % image_file
@@ -593,10 +593,12 @@ class KittiDataset(object):
         Returns: Points.
         """
 
-        point_file = join(self._point_dir, self._file_list[frame_idx])+'.bin'
-        velo_data = np.fromfile(point_file, dtype=np.float32).reshape(-1, 4)
+        # point_file = join(self._point_dir, self._file_list[frame_idx])+'.bin'
+        point_file = join(self._point_dir, self._file_list[frame_idx])+'.npy'
+        velo_data = np.load(point_file)
         velo_points = velo_data[:,:3]
         reflections = velo_data[:,[3]]
+        point_colors = velo_data[:,4:]
         if xyz_range is not None:
             x_range, y_range, z_range = xyz_range
             mask =(
@@ -605,7 +607,7 @@ class KittiDataset(object):
                 velo_points[:, 1] > y_range[0])*(velo_points[:, 1] < y_range[1])
             mask *=(
                 velo_points[:, 2] > z_range[0])*(velo_points[:, 2] < z_range[1])
-            return Points(xyz = velo_points[mask], attr = reflections[mask])
+            return Points(xyz = velo_points[mask], attr = reflections[mask], color = point_colors[mask])
         return Points(xyz = velo_points, attr = reflections)
 
     def get_cam_points(self, frame_idx,

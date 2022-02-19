@@ -4,8 +4,10 @@ import numpy as np
 import random
 from copy import deepcopy
 
-from dataset.kitti_dataset import Points, sel_xyz_in_box3d, \
-    downsample_by_average_voxel, downsample_by_random_voxel
+#from dataset.kitti_dataset import Points, sel_xyz_in_box3d, downsample_by_average_voxel, downsample_by_random_voxel
+from dataset.kitti_dataset import sel_xyz_in_box3d
+from dataset.painted_kitti_dataset import PaintedPoints, downsample_by_random_voxel
+
 from models.nms import boxes_3d_to_corners, overlapped_boxes_3d
 
 def random_jitter(cam_rgb_points, labels, xyz_std=(0.1, 0.1, 0.1)):
@@ -14,7 +16,7 @@ def random_jitter(cam_rgb_points, labels, xyz_std=(0.1, 0.1, 0.1)):
     y_delta = np.random.normal(size=(xyz.shape[0], 1), scale=xyz_std[1])
     z_delta = np.random.normal(size=(xyz.shape[0], 1), scale=xyz_std[2])
     xyz += np.hstack([x_delta, y_delta, z_delta])
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), labels
 
 def random_drop(cam_rgb_points, labels, drop_prob=0.5, tier_prob=None):
     if isinstance(drop_prob, list):
@@ -24,7 +26,7 @@ def random_drop(cam_rgb_points, labels, drop_prob=0.5, tier_prob=None):
     if np.sum(mask) == 0:
         # print("Warning: attempt to drop all points, restore to all points")
         mask = np.ones_like(mask)
-    return Points(xyz=xyz[mask], attr=cam_rgb_points.attr[mask]), labels
+    return PaintedPoints(xyz=xyz[mask], attr=cam_rgb_points.attr[mask], scores=cam_rgb_points.scores[mask]), labels
 
 def random_global_drop(cam_rgb_points, labels, drop_std=0.25):
     drop_prob = np.abs(np.random.normal(scale=drop_std))
@@ -63,7 +65,7 @@ def random_rotation_all(cam_rgb_points, labels, method_name='normal',
             xyz_center = xyz_center.dot(np.transpose(R))
             label['x3d'], label['y3d'], label['z3d'] = xyz_center[0]
             label['yaw'] = label['yaw']+delta_yaw
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), labels
 
 def random_flip_all(cam_rgb_points, labels, flip_prob=0.5):
     xyz = cam_rgb_points.xyz
@@ -74,7 +76,7 @@ def random_flip_all(cam_rgb_points, labels, flip_prob=0.5):
             if label['name'] != 'DontCare':
                 label['x3d'] = -label['x3d']
                 label['yaw'] = np.pi-label['yaw']
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), labels
 
 def random_scale_all(cam_rgb_points, labels, method_name='normal',
     scale_std=0.05):
@@ -93,7 +95,7 @@ def random_scale_all(cam_rgb_points, labels, method_name='normal',
             label['length'] *= scale
             label['width'] *= scale
             label['height'] *= scale
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), labels
 
 def random_box_rotation(cam_rgb_points, labels, max_overlap_num_allowed=0.1,
     max_trails = 100, appr_factor=100, method_name='normal',
@@ -161,7 +163,7 @@ def random_box_rotation(cam_rgb_points, labels, max_overlap_num_allowed=0.1,
     assert len(new_labels) == len(labels_no_dontcare)
     new_labels.extend([l for l in labels if l['name'] == 'DontCare'])
     assert len(new_labels) == len(labels)
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), new_labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), new_labels
 
 
 def random_box_global_rotation(cam_rgb_points, labels,
@@ -180,6 +182,7 @@ def random_box_global_rotation(cam_rgb_points, labels,
     ):
     xyz = cam_rgb_points.xyz
     attr = cam_rgb_points.attr
+    scores = cam_rgb_points.scores
     # filtering DontCare
     labels_no_dontcare = [label for label in labels
         if label['name'] != 'DontCare']
@@ -219,6 +222,7 @@ def random_box_global_rotation(cam_rgb_points, labels,
                     xyz[mask, :] = points_xyz
                     xyz = xyz[np.logical_not(more_mask)]
                     attr = attr[np.logical_not(more_mask)]
+                    scores = scores[np.logical_not(more_mask)]
                     # update boxes and label
                     new_labels.append(new_label)
                     sucess = True
@@ -233,7 +237,7 @@ def random_box_global_rotation(cam_rgb_points, labels,
     assert len(new_labels) == len(labels_no_dontcare)
     new_labels.extend([l for l in labels if l['name'] == 'DontCare'])
     assert len(new_labels) == len(labels)
-    return Points(xyz=xyz, attr=attr), new_labels
+    return PaintedPoints(xyz=xyz, attr=attr, scores=scores), new_labels
 
 
 def random_box_shift(cam_rgb_points, labels, max_overlap_num_allowed=0.1,
@@ -323,7 +327,7 @@ def random_box_shift(cam_rgb_points, labels, max_overlap_num_allowed=0.1,
     assert len(new_labels) == len(labels_no_dontcare)
     new_labels.extend([l for l in labels if l['name'] == 'DontCare'])
     assert len(new_labels) == len(labels)
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), new_labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), new_labels
 
 def dilute_background(cam_rgb_points, labels, dilute_voxel_base=0.4,
     expend_factor=(4.0, 4.0, 4.0),
@@ -366,16 +370,19 @@ def dilute_background(cam_rgb_points, labels, dilute_voxel_base=0.4,
 
     background_xyz = xyz[np.logical_not(mask)]
     background_attr = cam_rgb_points.attr[np.logical_not(mask)]
-    background_points = Points(xyz=background_xyz, attr=background_attr)
+    background_scores = cam_rgb_points.scores[np.logical_not(scores)]
+    background_points = PaintedPoints(xyz=background_xyz, attr=background_attr, scores=background_scores)
     front_xyz = xyz[mask]
     front_attr = cam_rgb_points.attr[mask]
+    front_scores = cam_rgb_points.scores[mask]
     diluted_background_points = downsample_by_random_voxel(
         background_points, dilute_voxel_base, add_rnd3d=True)
 
-    return Points(
+    return PaintedPoints(
         xyz=np.concatenate([front_xyz, diluted_background_points.xyz], axis=0),
-        attr=np.concatenate([front_attr,
-            diluted_background_points.attr], axis=0)), labels_no_dontcare
+        attr=np.concatenate([front_attr, diluted_background_points.attr], axis=0),
+        scores=np.concatenate([front_scores, diluted_background_points.scores], axis=0)
+    ), labels_no_dontcare
 
 def remove_background(cam_rgb_points, labels, expend_factor=(4.0, 4.0, 4.0),
     keep_list=[
@@ -424,8 +431,9 @@ def remove_background(cam_rgb_points, labels, expend_factor=(4.0, 4.0, 4.0),
     if not mask.any():
         # keep two point
         mask[0] = True
-    return Points(xyz=xyz[mask],
-        attr=cam_rgb_points.attr[mask]), labels_no_dontcare
+    return PaintedPoints(xyz=xyz[mask],
+        attr=cam_rgb_points.attr[mask],
+        scores=cam_rgb_points.scores[mask]), labels_no_dontcare
 
 def random_transition(cam_rgb_points, labels, xyz_std=(0.1, 0.1, 0.1)):
     xyz = cam_rgb_points.xyz
@@ -437,7 +445,7 @@ def random_transition(cam_rgb_points, labels, xyz_std=(0.1, 0.1, 0.1)):
         label['x3d'] += x_delta
         label['y3d'] += y_delta
         label['z3d'] += z_delta
-    return Points(xyz=xyz, attr=cam_rgb_points.attr), labels
+    return PaintedPoints(xyz=xyz, attr=cam_rgb_points.attr, scores=cam_rgb_points.scores), labels
 
 
 def empty(cam_rgb_points, labels):
