@@ -1,17 +1,6 @@
-# Point-GNN
+# Painted-Point-GNN
 
-This repository contains a reference implementation of our [Point-GNN: Graph Neural Network for 3D Object Detection in a Point Cloud](http://openaccess.thecvf.com/content_CVPR_2020/papers/Shi_Point-GNN_Graph_Neural_Network_for_3D_Object_Detection_in_a_CVPR_2020_paper.pdf), CVPR 2020. 
-
-If you find this code useful in your research, please consider citing our work:
-```
-@InProceedings{Point-GNN,
-author = {Shi, Weijing and Rajkumar, Ragunathan (Raj)},
-title = {Point-GNN: Graph Neural Network for 3D Object Detection in a Point Cloud},
-booktitle = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-month = {June},
-year = {2020}
-}
-```
+This repository is contains a modified implementation of the paper [Point-GNN: Graph Neural Network for 3D Object Detection in a Point Cloud](http://openaccess.thecvf.com/content_CVPR_2020/papers/Shi_Point-GNN_Graph_Neural_Network_for_3D_Object_Detection_in_a_CVPR_2020_paper.pdf), CVPR 2020.
 
 ## Getting Started
 
@@ -43,7 +32,8 @@ We use the KITTI 3D Object Detection dataset. Please download the dataset from t
     |       └── image_2 
     ├── velodyne                 # Velodyne point cloud files
     │   ├── training
-    |   |   └── velodyne            
+    |   |   ├── velodyne            
+    |   |   └── painted_lidar   # Contains painted point clouds            
     │   └── testing
     |       └── velodyne 
     ├── calib                    # Calibration files
@@ -63,7 +53,7 @@ We use the KITTI 3D Object Detection dataset. Please download the dataset from t
 
 Clone the repository recursively:
 ```
-git clone https://github.com/WeijingShi/Point-GNN.git --recursive
+git clone https://github.com/k-alkiek/Painted-Point-GNN.git --recursive
 ```
 
 ## Inference
@@ -161,9 +151,4 @@ You can use tensorboard to view the training and evaluation status.
 ```
 tensorboard --logdir=./train_dir
 ```
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
-
 
